@@ -8,6 +8,7 @@ import re
 from unicodedata import normalize
 from ipa_uk import ipa
 from ukrainian_word_stress import Stressifier, StressSymbol
+from num2words import num2words
 
 # NLTK setup
 import nltk
@@ -61,7 +62,40 @@ def get_available_voices():
                     voices.append(v_name)
     return voices
 
+EMOJI_MAP = {
+    ":)": "посмішка", ":-)": "посмішка", ":(": "сум", ":-(": "сум",
+    ";)": "підмигування", ";-)": "підмигування", ":D": "сміх", "XD": "сміх",
+    "❤️": "серце", "😂": "регіт", "😊": "щасливе обличчя", "👍": "лайк",
+    "🔥": "вогонь", "🙏": "дякую", "✨": "блискітки", "😭": "плач",
+    "😎": "круто", "🤔": "хм", "😍": "закоханість", "🤣": "регіт",
+    "🙌": "ура", "🤩": "вау", "🥳": "свято", "😢": "сльоза",
+    "😡": "злість", "👏": "аплодисменти", "💯": "на всі сто",
+    "🚀": "ракета", "🇺🇦": "Слава Україні",
+    # Twitch Custom Emojis (salsac)
+    ":salsacSmile:": "посмішка", ":salsacPixel:": "піксель", ":salsacTake:": "таке собі",
+    ":salsacNprmn:": "неприємно", ":salsacThumbsUp:": "клас", ":salsacCool:": "круто",
+    ":salsacScream:": "крик", ":salsacSad:": "сумно", ":salsacAnime:": "аніме",
+    ":salsacGrandpa:": "дідусь", ":salsacHaiky:": "ГАЙКИ", ":salsacThink:": "хм",
+    ":salsacDance:": "танці", ":salsacRave:": "рейв", ":salsacCoolslide:": "крутезно",
+    ":salsacSpin:": "кружляння", ":salsacShake:": "тряска", ":salsacTakeout:": "таке собі",
+    ":salsacRain:": "дощ", ":salsacMadshake:": "злість", ":salsacUapawn:": "укропішак",
+    ":salsacHeart:": "серце", ":salsacBunt:": "бунт"
+}
+
 def verbalize(text: str) -> str:
+    # Заміна емодзі та смайликів
+    for emoji_char, description in EMOJI_MAP.items():
+        text = text.replace(emoji_char, f" {description} ")
+
+    # Знаходимо всі числа в тексті
+    def replace_num(match):
+        try:
+            return num2words(int(match.group()), lang='uk')
+        except:
+            return match.group()
+    
+    # Замінюємо цифри на слова
+    text = re.sub(r'\d+', replace_num, text)
     return text
 
 def synthesize(model_name: str, text: str, speed: float = 1.0, voice_name: str = "Тетяна Гончарова"):
@@ -70,9 +104,15 @@ def synthesize(model_name: str, text: str, speed: float = 1.0, voice_name: str =
     if model is None: raise gr.Error("Model not loaded")
     
     try:
-        clean_text = text.strip()
-        clean_text = clean_text.replace('"', '')
-        if clean_text:
+        # Розбиваємо текст на речення для стабільного темпу
+        sentences = nltk.sent_tokenize(text)
+        combined_wav = []
+        
+        for sentence in sentences:
+            clean_text = sentence.strip()
+            clean_text = clean_text.replace('"', '')
+            if not clean_text: continue
+            
             clean_text = clean_text.replace('+', StressSymbol.CombiningAcuteAccent)
             clean_text = normalize('NFKC', clean_text)
             clean_text = re.sub(r'[᠆‐‑‒–—―⁻₋−⸺⸻]', '-', clean_text)
@@ -81,42 +121,59 @@ def synthesize(model_name: str, text: str, speed: float = 1.0, voice_name: str =
             clean_text = re.sub(r' - ', ': ', clean_text)
             clean_text = stressify(clean_text)
             ps = ipa(clean_text)
-        else:
-            raise ValueError("Empty text")
-
-        print(f"[TTS] Фонетизація (IPA_UK): {ps[:60]}...")
-        tokens = model.tokenizer.encode(ps)
-        
-        style = None
-        if model_name == "multi":
-            # Спочатку шукаємо в кастомних голосах
-            custom_style_path = os.path.join(CUSTOM_VOICES_DIR, f"{voice_name}.pt")
-            if os.path.exists(custom_style_path):
-                print(f"[TTS] Використовується кастомний голос: {voice_name}")
-                style = torch.load(custom_style_path, map_location=DEVICE)
-            elif voices_dir:
-                # Потім у стандартних
-                style_path = os.path.join(voices_dir, f"{voice_name}.pt")
-                if os.path.exists(style_path):
-                    style = torch.load(style_path, map_location=DEVICE)
             
-            if style is not None and style.ndim == 1:
-                style = style.unsqueeze(0)
-        
-        if style is None:
-            # Для unknown voice або single моделі застосовуємо дифузію
-            print("[TTS] Дифузія просодії (single model)...")
+            tokens = model.tokenizer.encode(ps)
+            if len(tokens) > 510: tokens = tokens[:510]
+            
+            style = None
+            if model_name == "multi":
+                custom_style_path = os.path.join(CUSTOM_VOICES_DIR, f"{voice_name}.pt")
+                if os.path.exists(custom_style_path):
+                    style = torch.load(custom_style_path, map_location=DEVICE)
+                elif voices_dir:
+                    style_path = os.path.join(voices_dir, f"{voice_name}.pt")
+                    if os.path.exists(style_path):
+                        style = torch.load(style_path, map_location=DEVICE)
+                
+                if style is not None and style.ndim == 1:
+                    style = style.unsqueeze(0)
+                
+                # ОЖИВЛЕННЯ (50 кроків для чистоти)
+                if style is not None:
+                    try:
+                        with torch.no_grad():
+                            text_style = model_single.predict_style_single(torch.LongTensor(tokens).to(DEVICE), diffusion_steps=50, embedding_scale=1.5)
+                        
+                        # Перевірка на NaN (щоб програма не падала на дивних словах як "мат.")
+                        if torch.isnan(text_style).any():
+                            print("[TTS] Попередження: виявлено NaN у динамічному стилі, використовуємо статичний тембр.")
+                        else:
+                            # Змішуємо 80/20 для балансу впізнаваності та емоцій
+                            style = style.to(DEVICE) * 0.8 + text_style.to(DEVICE) * 0.2
+                    except Exception as e:
+                        print(f"[TTS] Попередження: помилка генерації динамічного стилю ({e}), використовуємо статичний.")
+            
+            if style is None:
+                with torch.no_grad():
+                    style = model.predict_style_single(torch.LongTensor(tokens).to(DEVICE), diffusion_steps=50, embedding_scale=1.5)
+                
             with torch.no_grad():
-                style = model.predict_style_single(torch.LongTensor(tokens).to(DEVICE), diffusion_steps=30, embedding_scale=1.5)
+                t = torch.LongTensor(tokens).to(DEVICE)
+                s = style.to(DEVICE)
+                # Додаткова фінальна перевірка стилю перед синтезом
+                if torch.isnan(s).any():
+                    raise ValueError("Неможливо згенерувати стиль для цього тексту (NaN).")
+                wav = model(t, s_prev=s, speed=speed)
+                
+            if isinstance(wav, torch.Tensor): wav = wav.cpu().numpy()
+            wav = np.squeeze(wav)
+            combined_wav.append(wav)
+
+        if not combined_wav:
+            raise ValueError("Empty text")
             
-        with torch.no_grad():
-            t = torch.LongTensor(tokens).to(DEVICE)
-            s = style.to(DEVICE)
-            wav = model(t, s_prev=s, speed=speed)
-            
-        if isinstance(wav, torch.Tensor): wav = wav.cpu().numpy()
-        wav = np.squeeze(wav)
-        return (24000, wav)
+        final_wav = np.concatenate(combined_wav)
+        return (24000, final_wav)
     except Exception as e:
         print(f"[TTS] Error: {e}")
         raise gr.Error(str(e))
