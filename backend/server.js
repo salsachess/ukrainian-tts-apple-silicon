@@ -146,6 +146,7 @@ app.post('/v1/audio/speech', async (req, res) => {
         });
 
         // Генеруємо аудіо ТІЛЬКИ для тексту повідомлення
+        console.log(`[OpenAI Bridge] RAW input: "${input}"`);
         console.log(`[OpenAI Bridge] User: ${characterName} | Voice: ${voiceId} | Text: ${messageText}`);
         const audioResult = await ai.generateAudio(messageText, voiceId);
         
