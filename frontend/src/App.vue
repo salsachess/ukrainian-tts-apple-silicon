@@ -55,8 +55,8 @@ import axios from 'axios'
 import { useQuasar } from 'quasar'
 
 const $q = useQuasar()
-const character = ref('Ельф')
-const text = ref('Я Ельф, я люблю груші і не люблю яблука')
+const character = ref('salsachess')
+const text = ref('Вітаю на стрімі salsachess! ❤️ Слава Україні! 🇺🇦 ЗСУ та СБУ — наші красунчики 🔥. УНР та УПА — наша легендарна історія. Граємо у шахи разом з FSO 👍.')
 const isWarming = ref(false)
 const isGenerating = ref(false)
 const audioSrc = ref(null)
