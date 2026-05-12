@@ -39,14 +39,19 @@ wheels/
 *.mp3
 *.m4a
 *.flac
-*.pt
 *.pth
 *.bin
 *.model
 *.onnx
-custom_voices/
-!custom_voices/.gitkeep
+# Дозволяємо кастомні голоси, бо вони маленькі
+!custom_voices/*.pt
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Data & Tests
+LibriSpeech/
+librispeech/
+test_outputs/
+temp_*.wav
